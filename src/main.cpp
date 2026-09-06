@@ -20,7 +20,14 @@
 #define SOCKET_PIN_12 A4
 #define SOCKET_PIN_13 A5
 // Pin 14 is connected to +5V (VCC)
-
+// #define DEBUG
+#ifdef DEBUG
+#define serialDebug(...) Serial.print(__VA_ARGS__)
+#define serialDebugln(...) Serial.println(__VA_ARGS__)
+#else
+#define serialDebug(...)
+#define serialDebugln(...)
+#endif
 // ============================================================================
 // EXPECTED HARDCODED SIGNATURES FOR GENERIC QUAD CHIPS
 // Signature = (bit_00 << 0) + (bit_01 << 1) + (bit_10 << 2) + (bit_11 << 3)
@@ -44,7 +51,19 @@ const uint8_t TEST_PAIRS[4][2] = {
 void setAllPinsSafe()
 {
     const uint8_t pins[12] = {
-        SOCKET_PIN_1, SOCKET_PIN_2, SOCKET_PIN_3, SOCKET_PIN_4, SOCKET_PIN_5, SOCKET_PIN_6, SOCKET_PIN_8, SOCKET_PIN_9, SOCKET_PIN_10, SOCKET_PIN_11, SOCKET_PIN_12, SOCKET_PIN_13};
+        SOCKET_PIN_1,
+        SOCKET_PIN_2,
+        SOCKET_PIN_3,
+        SOCKET_PIN_4,
+        SOCKET_PIN_5,
+        SOCKET_PIN_6,
+        SOCKET_PIN_8,
+        SOCKET_PIN_9,
+        SOCKET_PIN_10,
+        SOCKET_PIN_11,
+        SOCKET_PIN_12,
+        SOCKET_PIN_13,
+    };
     for (uint8_t i = 0; i < 12; i++)
     {
         pinMode(pins[i], INPUT);
@@ -55,7 +74,6 @@ void setAllPinsSafe()
 // Inverters: 1->2, 3->4, 5->6, 9->8, 11->10, 13->12
 void configure74HC04()
 {
-    setAllPinsSafe();
     // Inputs to chip (Arduino outputs)
     pinMode(SOCKET_PIN_1, OUTPUT);
     pinMode(SOCKET_PIN_3, OUTPUT);
@@ -99,7 +117,6 @@ void configure74HC02()
 // InA=1,InB=2,Out=3 | InA=4,InB=5,Out=6 | Out=8,InA=9,InB=10 | Out=11,InA=12,InB=13
 void configure74HC_generic()
 {
-    setAllPinsSafe();
     // Inputs to chip (Arduino outputs)
     pinMode(SOCKET_PIN_1, OUTPUT);
     pinMode(SOCKET_PIN_2, OUTPUT);
@@ -124,8 +141,8 @@ void configure74HC_generic()
 // Step 1: Check 74HC04 (Hex Inverter)
 bool test74HC04()
 {
+    serialDebugln("Trying 04");
     configure74HC04();
-    Serial.println("Trying 74HC04");
 
     const uint8_t inPins[6]  = {SOCKET_PIN_1, SOCKET_PIN_3, SOCKET_PIN_5, SOCKET_PIN_9, SOCKET_PIN_11, SOCKET_PIN_13};
     const uint8_t outPins[6] = {SOCKET_PIN_2, SOCKET_PIN_4, SOCKET_PIN_6, SOCKET_PIN_8, SOCKET_PIN_10, SOCKET_PIN_12};
@@ -135,11 +152,16 @@ bool test74HC04()
     {
         digitalWrite(inPins[i], HIGH);
     }
-    delayMicroseconds(10);
+    delayMicroseconds(100);
     for (uint8_t i = 0; i < 6; i++)
     {
-        if (digitalRead(outPins[i]) != LOW)
+        uint8_t incomingBit = 255;
+        if ((incomingBit = digitalRead(outPins[i])) != LOW)
         {
+            serialDebug("Pin ");
+            serialDebug(i);
+            serialDebug(" incorrect: expected 0 got ");
+            serialDebugln(incomingBit);
             return false; // Fail, try next gate
         }
     }
@@ -149,23 +171,29 @@ bool test74HC04()
     {
         digitalWrite(inPins[i], LOW);
     }
-    delayMicroseconds(10);
+    delayMicroseconds(100);
     for (uint8_t i = 0; i < 6; i++)
     {
-        if (digitalRead(outPins[i]) != HIGH)
+        uint8_t incomingBit = 255;
+        if ((incomingBit = digitalRead(outPins[i])) != HIGH)
         {
+            serialDebug("Pin ");
+            serialDebug(i);
+            serialDebug(" incorrect: expected 1 got ");
+            serialDebugln(incomingBit);
             return false; // Fail, try next gate
         }
     }
 
+    Serial.println(F("74HC04 - NOT"));
     return true; // Pass
 }
 
 // Step 2: Check 74HC02 (Quad NOR Gate)
 bool test74HC02()
 {
+    serialDebugln("Trying 02");
     configure74HC02();
-    Serial.println("Trying 74HC02");
 
     const uint8_t inA[4]  = {SOCKET_PIN_2, SOCKET_PIN_5, SOCKET_PIN_8, SOCKET_PIN_11};
     const uint8_t inB[4]  = {SOCKET_PIN_3, SOCKET_PIN_6, SOCKET_PIN_9, SOCKET_PIN_12};
@@ -196,14 +224,15 @@ bool test74HC02()
         }
     }
 
+    Serial.println(F("74HC02 - NOR"));
     return true; // Pass
 }
 
 // Step 3: Check Generic Quad Gate (74HC00, 74HC08, 74HC32)
-void testGeneric()
+bool testGeneric()
 {
     configure74HC_generic();
-    Serial.println("Trying 74HC generic");
+    serialDebugln("Trying generic");
 
     const uint8_t inA[4]  = {SOCKET_PIN_1, SOCKET_PIN_4, SOCKET_PIN_9, SOCKET_PIN_12};
     const uint8_t inB[4]  = {SOCKET_PIN_2, SOCKET_PIN_5, SOCKET_PIN_10, SOCKET_PIN_13};
@@ -219,7 +248,7 @@ void testGeneric()
             digitalWrite(inA[g], TEST_PAIRS[step][0]);
             digitalWrite(inB[g], TEST_PAIRS[step][1]);
         }
-        delayMicroseconds(10);
+        delayMicroseconds(100);
 
         // Read first gate output
         uint8_t firstBit = digitalRead(outY[0]);
@@ -227,15 +256,23 @@ void testGeneric()
         // Check all outputs look the same
         for (uint8_t g = 1; g < 4; g++)
         {
-            if (digitalRead(outY[g]) != firstBit)
+            uint8_t incomingBit = 255;
+            if ((incomingBit = digitalRead(outY[g])) != firstBit)
             {
-                Serial.println(F("UNKNOWN"));
-                return;
+                serialDebug("Bit ");
+                serialDebug(g);
+                serialDebug(" incorrect - expected ");
+                serialDebug(firstBit);
+                serialDebug(", got ");
+                serialDebugln(incomingBit);
+                return false;
             }
         }
 
         // Save output as the corresponding bit of the signature variable
         signature += (firstBit << step);
+        serialDebug("Signature: ");
+        serialDebugln(signature);
     }
 
     // Compare calculated signature with hardcoded values
@@ -253,40 +290,36 @@ void testGeneric()
     }
     else
     {
-        Serial.println(F("UNKNOWN"));
+        return false;
     }
+    return true;
 }
 
 void scanChip()
 {
-    // 1. Try HEX inverter (74HC04)
     if (test74HC04())
     {
-        Serial.println(F("74HC04 - NOT"));
-        setAllPinsSafe();
         return;
     }
-
-    // 2. Try NOR gate (74HC02)
     if (test74HC02())
     {
-        Serial.println(F("74HC02 - NOR"));
-        setAllPinsSafe();
         return;
     }
-
-    // 3. Try Generic Quad Gates (74HC00, 74HC08, 74HC32)
-    testGeneric();
-    setAllPinsSafe();
+    if (testGeneric())
+    {
+        return;
+    }
+    Serial.println(F("UNKNOWN CHIP"));
 }
 
 void setup()
 {
     Serial.begin(115200);
+    setAllPinsSafe();
     scanChip();
+    setAllPinsSafe();
 }
 
 void loop()
 {
-    // Empty - scan runs once upon boot
 }
